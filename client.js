@@ -419,7 +419,7 @@ window.__ModuleLoader__.load({
               h('div', { className: 'ka-mc-t', title: route.model }, route.model),
               h('div', { className: 'ka-mc-p', title: route.key }, route.provider)
             ),
-            h('div', { className: 'ka-ctl', title: enabled ? '该模型参与保活' : !listed ? '该模型不在 config.json 的 routes 清单里，所以不保活；打开开关即可' : '该模型不保活' },
+            h('div', { className: 'ka-ctl', title: enabled ? '该模型参与保活' : !listed ? '该模型不在 config.json 的 routes 清单里，所以不保活（窗口开了压缩的话仍会自动压缩）；打开开关即可' : '该模型不保活（窗口开了压缩的话仍会自动压缩）' },
               h('span', { className: 'ka-sub' }, enabled ? '保活' : '已关闭'),
               h(Switch, { checked: enabled, onChange: (v) => { setMsg(null); setOffEdit(v); }, label: route.model + ' 保活开关' })
             )
@@ -659,7 +659,7 @@ window.__ModuleLoader__.load({
           ),
 
           h('section', { className: 'ka-group' },
-            h('div', { className: 'ka-gh' }, h('h3', { className: 'ka-gt' }, '空闲后自动压缩'), h('span', { className: 'ka-gd' }, '长时间不回来的对话，压缩一次再停止保活')),
+            h('div', { className: 'ka-gh' }, h('h3', { className: 'ka-gt' }, '空闲后自动压缩'), h('span', { className: 'ka-gd' }, '长时间不回来的对话，压缩一次再停止保活；没开保活的窗口也可以只压缩')),
             h('div', { className: 'ka-card' },
               h(SettingRow, {
                 title: '新会话默认开启压缩',
@@ -667,7 +667,7 @@ window.__ModuleLoader__.load({
               }, h(Switch, { checked: boolValue('compactEnabled') === true, onChange: (v) => edit('compactEnabled', v), disabled: !loaded, label: '新会话默认开启压缩' })),
               h(SettingRow, {
                 title: '空闲多久后压缩',
-                desc: '保活期间空闲满这么久就压缩一次。范围 5–120。',
+                desc: '窗口空闲满这么久就压缩一次（保活没开的窗口同样会压，只是不做保活）。可按模型单独设置。范围 5–120。',
                 error: errors.compactAfterMinutes
               }, numberInput('compactAfterMinutes', '分钟', '空闲多久后压缩')),
               h(SettingRow, {
@@ -686,7 +686,7 @@ window.__ModuleLoader__.load({
               h('div', { className: 'ka-note' }, h('i', { 'aria-hidden': 'true' }, 'i'),
                 h('span', null, '长任务期间的保活策略：后台任务或子 agent 运行时，保活照常按间隔进行，但不会无限延长，到了最长保活时长（开着压缩时为「最长保活时长」与「压缩时间＋1 分钟」中较大者）就停。任务结束会叫醒 agent，保活和压缩倒计时从头开始，所以长任务结束时不会因为早已过了压缩时间而被压缩。是否划算：保活 k 次的花费约为 k 次缓存读，缓存过期后重写要多付「写价−读价」，所以 k ≤ 写价÷读价 − 1 时保活才比不保活省钱，与上下文大小无关（中转站按写价 1.25 倍估约 11 次，约 46 分钟；官方价约 24 次，约 95 分钟）。建议最长保活时长不要超过这个数；任务比这更久，缓存会过期，结束时重写一次。')),
               h('div', { className: 'ka-note' }, h('i', { 'aria-hidden': 'true' }, 'i'),
-                h('span', null, '压缩开启的窗口，空闲满 ', h('b', { className: 'ka-num' }, String(compactMinutes)), ' 分钟后压缩一次并停止保活，下一次真实请求再重新开始。请勿与 ', h('code', null, 'dsh-auto-compact'), ' 同装，否则它会提前压缩、让保活白费。'))
+                h('span', null, '压缩开启的窗口，空闲满 ', h('b', { className: 'ka-num' }, String(compactMinutes)), ' 分钟后压缩一次（保活开着就同时停止保活），下一次真实请求再重新开始。请勿与 ', h('code', null, 'dsh-auto-compact'), ' 同装，否则它会提前压缩、让保活白费。'))
             )
           ),
 
@@ -728,7 +728,7 @@ window.__ModuleLoader__.load({
         if (status === 'blocked') return h('span', { className: 'ka-chip warn', title: '有后台任务或子 agent 在运行，暂缓压缩' }, '任务中');
         if (status === 'done' || status === 'manual') return h('span', { className: 'ka-chip ok', title: status === 'manual' ? '已手动压缩，等下一条消息重新计时' : '已自动压缩，等下一条消息重新计时' }, '已压缩');
         if (status === 'waiting') return h('span', { className: 'ka-chip', title: '等待下一条消息开始计时' }, '待命');
-        if (status === 'stopped') return s.stopped ? null : h('span', { className: 'ka-chip err', title: '本轮保活已停，不会自动压缩' }, '本轮已停');
+        if (status === 'stopped') return s.stopped && s.enabled ? null : h('span', { className: 'ka-chip err', title: '本轮已停，不会自动压缩' }, '本轮已停');
         return null;
       }
 
@@ -760,7 +760,7 @@ window.__ModuleLoader__.load({
             ),
             h('span', { className: 'ka-chips' },
               h('span', { className: cx('ka-chip', s.enabled ? 'ok' : '') }, s.enabled ? '保活开' : '保活关'),
-              s.enabled ? compactChip(win, s, (win && win.compactAfterMinutes) || compactMinutes, now, receivedAt) : null,
+              s.enabled || s.compact ? compactChip(win, s, (win && win.compactAfterMinutes) || compactMinutes, now, receivedAt) : null,
               s.enabled && !s.armed ? h('span', { className: 'ka-chip' }, '待首次命中') : null,
               s.enabled && s.stopped ? h('span', { className: 'ka-chip err' }, '本轮已停') : null
             ),
@@ -1042,12 +1042,12 @@ window.__ModuleLoader__.load({
           else frame.top = Math.min(window.innerHeight - 16, rect.bottom + 8);
         }
         const warn = 'var(--dsw-alias-state-warn-primary, #d99600)';
-        // Which message to show. Keep-alive off wins: the Host only reports windows that are on.
+        // Which message to show. Compaction works with or without keep-alive; no window entry yet = no message sent since it was switched on.
+        const keepOn = enabled === true;
         let status;
         if (enabled === null || compactOn === null) status = 'loading';
-        else if (enabled !== true) status = 'needKeepalive';
         else if (!compactOn) status = 'off';
-        else status = win && win.compactStatus ? win.compactStatus : 'loading';
+        else status = win && win.compactStatus ? win.compactStatus : 'waiting';
         const minutesText = (win && win.compactAfterMinutes) || minutes;
         const last = win && win.lastCompaction ? win.lastCompaction : null;
         const lastAt = last && last.at ? clock(last.at) : null;
@@ -1060,16 +1060,16 @@ window.__ModuleLoader__.load({
               h('span', { style: { fontSize: due !== null && due <= 0 ? 18 : 28, lineHeight: 1.15, fontWeight: 600, letterSpacing: '-0.01em', fontVariantNumeric: 'tabular-nums', fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', color: TIP.label } },
                 due === null ? '—' : due <= 0 ? '即将压缩' : countdown(due)),
               due !== null && due > 0 ? h('span', { style: { color: TIP.tertiary } }, '后压缩') : null),
-            note('空闲满 ' + minutesText + ' 分钟后压缩一次，之后停止保活'));
+            note('空闲满 ' + minutesText + ' 分钟后压缩一次' + (keepOn ? '，之后停止保活' : '（保活没开，只做压缩）')));
         } else if (status === 'running') body = note('正在压缩…');
         else if (status === 'small') {
           const kTok = (n) => (typeof n === 'number' ? Math.round(n / 1000) + 'k' : '?');
-          body = note('当前上下文约 ' + kTok(win && win.contextTokens) + ' token，低于下限 ' + kTok(win && win.compactMinTokens) + '：压缩一次的花费比直接重写缓存还高，所以不自动压缩。保活照常，到最长保活时长就停。');
+          body = note('当前上下文约 ' + kTok(win && win.contextTokens) + ' token，低于下限 ' + kTok(win && win.compactMinTokens) + '：压缩一次的花费比直接重写缓存还高，所以不自动压缩。' + (keepOn ? '保活照常，到最长保活时长就停。' : '下一条消息后重新判断。'));
         }
         else if (status === 'blocked') {
           const kinds = win && Array.isArray(win.compactBlockedBy) ? win.compactBlockedBy : [];
           const names = kinds.map((k) => (k === 'job' ? '后台任务' : k === 'subagent' ? '子 agent' : '任务')).filter((v, i, a) => a.indexOf(v) === i).join('、');
-          body = note('已到压缩时间，但' + (names || '任务') + '还在运行，暂缓压缩。保活继续，直到达到最长保活时长；任务结束叫醒 agent 后，倒计时从头开始');
+          body = note('已到压缩时间，但' + (names || '任务') + '还在运行，暂缓压缩。' + (keepOn ? '保活继续，直到达到最长保活时长；' : '会一直重试，') + '任务结束叫醒 agent 后，倒计时从头开始');
         }
         else if (status === 'done' || status === 'manual') {
           body = h('div', { style: { display: 'flex', flexDirection: 'column', gap: 3 } },
@@ -1077,12 +1077,11 @@ window.__ModuleLoader__.load({
             lastAt ? h('div', { style: { display: 'flex', justifyContent: 'space-between', gap: 10 } },
               h('span', { style: { color: TIP.tertiary } }, '压缩时间'),
               h('span', { style: { fontWeight: 500, fontVariantNumeric: 'tabular-nums' } }, lastAt)) : null);
-        } else if (status === 'stopped') body = note('本轮保活已停（缓存可能已过期），不会自动压缩；下一条消息起重新计时');
-        else if (status === 'waiting') body = note('等待下一条消息开始计时（插件刚重载/重启，快照在内存里）');
-        else if (status === 'needKeepalive') body = note('需要先开启本窗口的保活');
+        } else if (status === 'stopped') body = note((keepOn ? '本轮保活已停（缓存可能已过期），' : '本轮已结束（任务一直没结束或上下文太小），') + '不会自动压缩；下一条消息起重新计时');
+        else if (status === 'waiting') body = note('等待下一条消息开始计时（刚开启，或插件刚重载/重启，快照在内存里）');
         else if (status === 'off') body = note('本窗口未开启自动压缩，点击开启');
         else body = note('正在读取本窗口状态…');
-        const stateText = status === 'loading' ? '读取中' : status === 'needKeepalive' || status === 'off' ? '本窗口关' : '本窗口开';
+        const stateText = status === 'loading' ? '读取中' : status === 'off' ? '本窗口关' : '本窗口开';
         return ReactDOM.createPortal(
           h('div', {
             'data-plugin': 'cache-keepalive-compact-tip',
@@ -1135,7 +1134,7 @@ window.__ModuleLoader__.load({
           if (compactPending !== null && compactStored === compactPending) setCompactPending(null);
         }, [compactPending, compactStored]);
         const toggleCompact = async () => {
-          if (compactBusy.current || compactOn === null || enabled !== true || typeof sessionId !== 'string' || sessionId.length === 0) return;
+          if (compactBusy.current || compactOn === null || typeof sessionId !== 'string' || sessionId.length === 0) return;
           compactBusy.current = true;
           const next = !compactOn;
           setCompactPending(next);
@@ -1287,18 +1286,16 @@ window.__ModuleLoader__.load({
         );
 
         const compactMinutes = (state && state.windows && state.windows[sessionId] && state.windows[sessionId].compactAfterMinutes) || (config && config.compactAfterMinutes) || 20;
-        const compactDim = missing || enabled !== true;
+        const compactDim = missing;
         const compactPill = missing ? null : h('button', {
           type: 'button',
           'data-plugin': 'cache-keepalive-compact-toggle',
           ref: compactRef,
           title: canFloat
             ? undefined
-            : enabled !== true
-            ? '空闲自动压缩：需要先开启本窗口的「保活」'
             : compactOn
-              ? '空闲自动压缩：已开启（保活期间空闲满 ' + compactMinutes + ' 分钟压缩一次并停止保活），点击关闭'
-              : '空闲自动压缩：已关闭，点击开启（空闲满 ' + compactMinutes + ' 分钟压缩一次）',
+              ? '空闲自动压缩：已开启（空闲满 ' + compactMinutes + ' 分钟压缩一次' + (enabled === true ? '并停止保活' : '；保活没开，只压缩') + '），点击关闭'
+              : '空闲自动压缩：已关闭，点击开启（空闲满 ' + compactMinutes + ' 分钟压缩一次，不需要开保活）',
           'aria-label': '空闲自动压缩开关（仅本会话）',
           // aria-disabled (not disabled): a disabled button swallows hover, and the card must explain why it is dim.
           'aria-disabled': compactDim ? 'true' : undefined,

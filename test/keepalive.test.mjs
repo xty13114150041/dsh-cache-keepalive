@@ -826,7 +826,7 @@ describe('i 窗口级压缩开关', () => {
     assert.equal(comp.calls, 1);
   });
 
-  test('i-d 压缩开关开、保活关闭的窗口不压缩（且不被跟踪）', async () => {
+  test('i-d 压缩开关开、保活关闭的窗口：仅压缩，不保活（见 z 组）', async () => {
     const comp = { calls: 0, compactNow: async () => { comp.calls += 1; return { shadowedTokenCount: 1 }; } };
     h = await setup({
       config: { sessionEnabled: {}, compactEnabled: true, compactAfterMinutes: 10 },
@@ -835,20 +835,19 @@ describe('i 窗口级压缩开关', () => {
     });
     await h.real(HIT);
     await h.advance(30 * MIN);
-    assert.equal(comp.calls, 0);
-    assert.equal(h.streamCalls.length, 0);
-    assert.equal((await h.state()).sessions.length, 0);
-    assert.equal(h.logLines().filter((l) => l.kind === 'compact').length, 0);
+    assert.equal(comp.calls, 1);
+    assert.equal(h.streamCalls.length, 0, '没有保活重放');
+    assert.equal(h.logLines().filter((l) => l.kind === 'compact').length, 1);
   });
 
-  test('i-d2 保活开启后被关闭（压缩开关仍开）→ 不压缩', async () => {
+  test('i-d2 保活开启后被关闭（压缩开关仍开）→ 只压缩，不再保活', async () => {
     const comp = { calls: 0, compactNow: async () => { comp.calls += 1; return { shadowedTokenCount: 1 }; } };
     h = await setup({ config: { sessionEnabled: {}, compactEnabled: true, compactAfterMinutes: 10 }, agents: { [SID]: agent('idle', comp) }, compaction: comp });
     await h.http(SWITCH, { method: 'POST', body: { session: SID, enabled: true } });
     await h.real(HIT);
     await h.http(SWITCH, { method: 'POST', body: { session: SID, enabled: false } });
     await h.advance(30 * MIN);
-    assert.equal(comp.calls, 0);
+    assert.equal(comp.calls, 1);
     assert.equal(h.streamCalls.length, 0);
   });
 
@@ -2225,5 +2224,110 @@ describe('y 按模型设置（routeSettings）', () => {
     assert.equal((await post({ [OPUS.provider + '/' + OPUS.model]: null })).status, 200);
     const again = (await h.state()).routes.find((r) => r.key === OPUS.provider + '/' + OPUS.model);
     assert.equal(again.enabled, false, '去掉单独选择后回到 routes 清单的结果');
+  });
+});
+
+describe('z 仅压缩（保活关、压缩开）', () => {
+  const mkComp = () => { const c = { calls: 0, compactNow: async () => { c.calls += 1; return { shadowedTokenCount: 1 }; } }; return c; };
+  const KEY = CLAUDE.provider + '/' + CLAUDE.model;
+  const only = (extra = {}) => ({ sessionEnabled: { [SID]: false }, sessionCompact: { [SID]: true }, compactAfterMinutes: 10, ...extra });
+
+  test('z1 保活关：不重放；空闲满压缩时间后压缩恰好一次，随后停', async () => {
+    const comp = mkComp();
+    h = await setup({ config: only(), agents: { [SID]: agent('idle', comp) }, compaction: comp });
+    await h.real(HIT);
+    await h.advance(9 * MIN);
+    assert.equal(comp.calls, 0);
+    const mid = (await h.state()).windows[SID];
+    assert.equal(mid.compactStatus, 'counting');
+    assert.equal(mid.enabled, false);
+    await h.advance(2 * MIN);
+    assert.equal(comp.calls, 1);
+    assert.equal(h.streamCalls.length, 0, '没有任何保活重放');
+    assert.equal(h.logLines().filter((l) => l.kind === 'keepalive').length, 0);
+    assert.equal((await h.state()).windows[SID].compactStatus, 'done');
+    await h.advance(120 * MIN);
+    assert.equal(comp.calls, 1);
+  });
+
+  test('z2 用该模型的压缩时间；上下文低于下限不压缩，宽限期后停', async () => {
+    const comp = mkComp();
+    h = await setup({ config: only({ compactAfterMinutes: 60, routeSettings: { [KEY]: { compactAfterMinutes: 6 } } }), agents: { [SID]: agent('idle', comp) }, compaction: comp });
+    await h.real(HIT);
+    await h.advance(7 * MIN);
+    assert.equal(comp.calls, 1, '模型自己的 6 分钟');
+    h.teardown();
+    h = await setup({ config: only({ compactMinTokens: 400000 }), agents: { [SID]: agent('idle', comp) }, compaction: comp });
+    comp.calls = 0;
+    await h.real({ cacheReadTokens: 200000, inputTokens: 100, outputTokens: 10 });
+    await h.advance(30 * MIN);
+    assert.equal(comp.calls, 0);
+    assert.equal((await h.state()).windows[SID].compactStatus, 'small');
+    await h.advance(60 * MIN);
+    assert.ok(h.logLines().some((l) => l.kind === 'stop' && l.reason === 'compact-window-over'));
+  });
+
+  test('z3 agent 在跑 / 有后台任务：暂缓，空了再压', async () => {
+    const comp = mkComp();
+    h = await setup({ config: only(), agents: { [SID]: agent('idle', comp) }, compaction: comp });
+    h.activity = [{ kind: 'job' }];
+    await h.real(HIT);
+    await h.advance(20 * MIN);
+    assert.equal(comp.calls, 0);
+    assert.equal((await h.state()).windows[SID].compactStatus, 'blocked');
+    h.activity = [];
+    await h.advance(MIN);
+    assert.equal(comp.calls, 1);
+  });
+
+  test('z4 保活和压缩都关：不捕获；只开压缩的窗口，换模型（不在保活清单）也照常压缩', async () => {
+    const comp = mkComp();
+    h = await setup({ config: only({ sessionCompact: {} }), agents: { [SID]: agent('idle', comp) }, compaction: comp });
+    await h.real(HIT);
+    assert.equal(h.logLines().filter((l) => l.kind === 'capture').length, 0);
+    h.teardown();
+    h = await setup({ config: only({ routes: [CLAUDE] }), agents: { [SID]: agent('idle', comp) }, compaction: comp });
+    comp.calls = 0;
+    await h.real(HIT, { provider: OPUS.provider, model: OPUS.model });
+    await h.advance(11 * MIN);
+    assert.equal(comp.calls, 1);
+    assert.equal(h.streamCalls.length, 0);
+  });
+
+  test('z5 保活开但该模型被关：压缩开则只压缩，压缩关则 route-off 停', async () => {
+    const comp = mkComp();
+    h = await setup({ config: { sessionCompact: { [SID]: true }, compactAfterMinutes: 10, routeSettings: { [KEY]: { enabled: false } } }, agents: { [SID]: agent('idle', comp) }, compaction: comp });
+    await h.real(HIT);
+    await h.advance(11 * MIN);
+    assert.equal(comp.calls, 1);
+    assert.equal(h.streamCalls.length, 0);
+  });
+
+  test('z6 开关：保活关、压缩开时窗口保留；压缩也关后窗口被清掉；下一条消息重新计时', async () => {
+    const comp = mkComp();
+    h = await setup({ config: { sessionEnabled: { [SID]: true }, compactAfterMinutes: 10 }, agents: { [SID]: agent('idle', comp) }, compaction: comp });
+    await h.real(HIT);
+    assert.equal((await h.http(SWITCH, { method: 'POST', body: { session: SID, compact: true } })).status, 200);
+    assert.equal((await h.http(SWITCH, { method: 'POST', body: { session: SID, enabled: false } })).status, 200);
+    assert.equal((await h.state()).sessions.length, 1, '仅压缩：保留');
+    assert.equal((await h.state()).sessions[0].compact, true);
+    await h.advance(11 * MIN);
+    assert.equal(comp.calls, 1);
+    assert.equal((await h.http(SWITCH, { method: 'POST', body: { session: SID, compact: false } })).status, 200);
+    assert.equal((await h.state()).sessions.length, 0, '两个都关：清掉');
+    await h.real(HIT);
+    assert.equal((await h.state()).sessions.length, 0);
+  });
+
+  test('z7 压缩中途新消息：压缩完成后窗口回到计时（重新捕获）', async () => {
+    const comp = mkComp();
+    h = await setup({ config: only(), agents: { [SID]: agent('idle', comp) }, compaction: comp });
+    await h.real(HIT);
+    await h.advance(11 * MIN);
+    assert.equal(comp.calls, 1);
+    await h.real(HIT);
+    assert.equal((await h.state()).windows[SID].compactStatus, 'counting');
+    await h.advance(11 * MIN);
+    assert.equal(comp.calls, 2);
   });
 });

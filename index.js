@@ -189,6 +189,8 @@ function appendLog(record) {
 
 /** A replay is a tiny request; anything slower than this is hung, and must not hold the lock. */
 const REPLAY_TIMEOUT_MS = 60_000;
+/** Compact-only windows keep retrying a blocked compaction this long after compactAfterMinutes. */
+const COMPACT_ONLY_GRACE_MINUTES = 60;
 /** `workspace/session-activity` kinds that postpone a compaction. `turn` is covered by agent.status; `schedule` (a task due later) must not block it. */
 const BLOCKING_KINDS = new Set(['job', 'subagent']);
 /** Share of the replayed prompt that must come from cache to count as a hit. */
@@ -487,7 +489,8 @@ export function apply(ctx) {
     // Turning a window on starts a fresh "本次开启" epoch; turning it off drops it.
     if (enabled === true) enabledSince.set(sessionId, Date.now());
     else enabledSince.delete(sessionId);
-    if (enabled !== true) sessions.delete(sessionId);
+    // Compact-only: a window with keep-alive off but compaction on keeps its snapshot, the compaction countdown needs it.
+    if (enabled !== true && !compactEnabledOf(sessionId)) sessions.delete(sessionId);
     appendLog({ kind: 'session-switch', session: sessionId, enabled: enabled === true });
   }
 
@@ -499,6 +502,7 @@ export function apply(ctx) {
   }
   function setSessionCompactOf(sessionId, enabled) {
     cfg = saveConfig({ ...cfg, sessionCompact: withSwitch(cfg.sessionCompact, sessionId, enabled, cfg.compactEnabled) });
+    if (enabled !== true && !sessionEnabledOf(sessionId)) sessions.delete(sessionId);
     appendLog({ kind: 'compact-switch', session: sessionId, enabled: enabled === true });
   }
 
@@ -611,9 +615,9 @@ export function apply(ctx) {
     const windows = {};
     for (const sessionId of ids) {
       const enabled = sessionEnabledOf(sessionId);
-      // Only windows that are actually being kept alive right now: a closed
+      // Only windows that do something right now (keep-alive and/or compaction): a closed
       // window has nothing to report, and the pill shows its own "off" card.
-      if (!enabled) continue;
+      if (!enabled && !compactEnabledOf(sessionId)) continue;
       const since = epochSinceOf(sessionId);
       const all = buckets.get(sessionId) ?? [];
       const kept = since === null
@@ -730,12 +734,13 @@ export function apply(ctx) {
     if (options.purpose !== undefined) return;
     const sessionId = options.sessionId;
     if (typeof sessionId !== 'string' || sessionId.length === 0) return;
-    if (!sessionEnabledOf(sessionId)) {
+    if (!sessionEnabledOf(sessionId) && !compactEnabledOf(sessionId)) {
       // This window is switched off: forget its snapshot so nothing gets replayed.
       sessions.delete(sessionId);
       return;
     }
-    if (!routeAllowed(options.provider, options.model)) return;
+    // A model that is off for keep-alive is still captured when the window's compaction is on (compact-only).
+    if (!compactEnabledOf(sessionId) && !routeAllowed(options.provider, options.model)) return;
     if (isNotUserVisibleMainSession(sessionId)) return;
 
     const now = Date.now();
@@ -926,10 +931,38 @@ export function apply(ctx) {
     appendLog({ kind: 'defer', session: sessionId, reason, overdueSeconds: Math.round((now - entry.nextDueAt) / 1000) });
   }
 
+  /**
+   * Compact-only window (keep-alive off for the window or for its model, compaction on): no replays,
+   * the entry only counts the idle time. At compactAfterMinutes it compacts once and stops; a
+   * compaction that stays blocked (running task, small context) is retried until a grace period after that.
+   */
+  async function compactOnlyStep(sessionId, entry) {
+    const afterMinutes = entryParam(entry, 'compactAfterMinutes');
+    const idleMs = Date.now() - entry.lastRealAt;
+    if (idleMs >= afterMinutes * 60_000 && compactWorthy(entry) && (await startCompaction(sessionId, entry))) return;
+    if (idleMs > (afterMinutes + COMPACT_ONLY_GRACE_MINUTES) * 60_000) {
+      entry.stopped = true;
+      appendLog({ kind: 'stop', session: sessionId, reason: 'compact-window-over', idleMinutes: +(idleMs / 60000).toFixed(1) });
+    }
+  }
+
   async function replay(sessionId, entry) {
-    if (!sessionEnabledOf(sessionId)) {
+    const keepSwitch = sessionEnabledOf(sessionId);
+    const compactSwitch = compactEnabledOf(sessionId);
+    if (!keepSwitch && !compactSwitch) {
       entry.stopped = true;
       sessions.delete(sessionId);
+      return;
+    }
+    if (!keepSwitch || (entry.snapshot !== undefined && !routeAllowed(entry.snapshot.provider, entry.snapshot.model))) {
+      if (entry.stopped) return;
+      if (compactSwitch) {
+        await compactOnlyStep(sessionId, entry);
+        return;
+      }
+      // This model was switched off in the settings while the window was armed.
+      entry.stopped = true;
+      appendLog({ kind: 'stop', session: sessionId, reason: 'route-off' });
       return;
     }
     if (busy) {
@@ -937,12 +970,6 @@ export function apply(ctx) {
       return;
     }
     if (entry.stopped) return;
-    if (entry.snapshot !== undefined && !routeAllowed(entry.snapshot.provider, entry.snapshot.model)) {
-      // This model was switched off in the settings while the window was armed.
-      entry.stopped = true;
-      appendLog({ kind: 'stop', session: sessionId, reason: 'route-off' });
-      return;
-    }
     const compactOn = compactEnabledOf(sessionId) && compactWorthy(entry);
     const compactAfterMinutes = entryParam(entry, 'compactAfterMinutes');
     const maxIdleMinutes = entryParam(entry, 'maxIdleMinutes');
@@ -1069,7 +1096,7 @@ export function apply(ctx) {
     try {
       const entries = [...sessions.entries()].sort((a, b) => b[1].lastRealAt - a[1].lastRealAt).slice(0, cfg.maxSessions);
       for (const [sessionId, entry] of entries) {
-        if (!sessionEnabledOf(sessionId)) {
+        if (!sessionEnabledOf(sessionId) && !compactEnabledOf(sessionId)) {
           sessions.delete(sessionId);
           continue;
         }
@@ -1251,6 +1278,7 @@ export function apply(ctx) {
         session: String(sessionId).slice(0, 18),
         title: entry.title ?? sessionTitle(sessionId) ?? null,
         enabled: sessionEnabledOf(sessionId),
+        compact: compactEnabledOf(sessionId),
         provider: entry.snapshot?.provider,
         model: entry.snapshot?.model,
         armed: entry.snapshot === undefined ? false : cfg.requireProvenCache === false || routeState(entry.snapshot.provider, entry.snapshot.model).proven,

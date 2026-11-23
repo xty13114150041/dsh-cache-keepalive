@@ -75,11 +75,11 @@ saves nothing and only burns quota - leave those routes out of `config.routes`.
 
 - **Composer oval** `[● 保活 | ● 压缩]` next to the message box. The left half switches keep-alive
   for **that conversation only**; the right half switches idle compaction for that conversation
-  (it needs keep-alive on). Each window keeps its own switches; toggling one never changes another.
+  (works with keep-alive off too: compact-only). Each window keeps its own switches; toggling one never changes another.
 - **Hovering the keep-alive half** opens a small card with this window's numbers since it was switched
   on: keep-alives, spend, hits, cache-read tokens, net saving, the current idle gap.
 - **Hovering the compaction half** opens a card with the countdown to the next automatic compaction (or why
-  there is none: off, keep-alive off, waiting for the next message, running, done, cleared by a manual
+  there is none: off, waiting for the next message, running, done, cleared by a manual
   `/compact`, or this idle gap already stopped) and the time of the last compaction.
 - **Settings (⌘,) → 缓存保活**, and the same page on the sidebar **Plugins** page (Official group, and the
   plugin row's *Configure*): status blocks, the editable settings below, a **per-model settings** section (one
@@ -164,7 +164,13 @@ saving. All figures are estimates, not a bill.
 - A replay in flight when a real request arrives is recorded but does not stop the new idle gap.
 - A due replay is deferred while a real stream **on the same route** is in flight (streams on other routes do not
   touch that prefix's cache). If a replay is more than 30 s overdue, one `defer` line with the reason is logged per idle gap.
-- **Compaction** (opt-in per window, needs keep-alive on): when the window has been idle `compactAfterMinutes`
+- **Compact-only** (compaction on, keep-alive off for the window — or off for its model): no replays are sent. The
+  window is still captured on each real request and only counts idle time; at `compactAfterMinutes` (the model's own
+  value if set) it is compacted once under the same guards as below (agent idle, no stream, no running work,
+  `compactMinTokens`) and then left alone. A compaction that stays blocked is retried for 60 more minutes, then the
+  window is dropped until the next real request. Note the cache has usually expired by then, so the compaction call
+  reads the whole context at the cold price. These windows share the `maxSessions` slots.
+- **Compaction** (opt-in per window, independent of keep-alive): when the window has been idle `compactAfterMinutes`
   and its agent is idle and has no stream in flight, the official compaction runs once (scoped
   `compaction.compactNow`, falling back to the `/compact` command) outside the replay lock, with a 10 min
   watchdog, and keep-alive stops for that window. If the window still owns a **running background job or subagent** (the agent itself is idle then, waiting for the
