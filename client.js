@@ -726,6 +726,7 @@ window.__ModuleLoader__.load({
         if (status === 'running') return h('span', { className: 'ka-chip warn' }, '压缩中');
         if (status === 'small') return h('span', { className: 'ka-chip', title: '上下文不到 ' + Math.round((win.compactMinTokens || 0) / 1000) + 'k token，压缩不划算，不会自动压缩' }, '不压缩');
         if (status === 'blocked') return h('span', { className: 'ka-chip warn', title: '有后台任务或子 agent 在运行，暂缓压缩' }, '任务中');
+        if (status === 'failed') return h('span', { className: 'ka-chip err', title: '自动压缩没有成功（出错、无内容可压或没有压缩命令），详情见日志' }, '压缩未成功');
         if (status === 'done' || status === 'manual') return h('span', { className: 'ka-chip ok', title: status === 'manual' ? '已手动压缩，等下一条消息重新计时' : '已自动压缩，等下一条消息重新计时' }, '已压缩');
         if (status === 'waiting') return h('span', { className: 'ka-chip', title: '等待下一条消息开始计时' }, '待命');
         if (status === 'stopped') return s.stopped && s.enabled ? null : h('span', { className: 'ka-chip err', title: '本轮已停，不会自动压缩' }, '本轮已停');
@@ -1043,7 +1044,7 @@ window.__ModuleLoader__.load({
         }
         const warn = 'var(--dsw-alias-state-warn-primary, #d99600)';
         // Which message to show. Compaction works with or without keep-alive; no window entry yet = no message sent since it was switched on.
-        const keepOn = enabled === true;
+        const keepOn = win && typeof win.keepAlive === 'boolean' ? win.keepAlive : enabled === true;
         let status;
         if (enabled === null || compactOn === null) status = 'loading';
         else if (!compactOn) status = 'off';
@@ -1069,7 +1070,7 @@ window.__ModuleLoader__.load({
         else if (status === 'blocked') {
           const kinds = win && Array.isArray(win.compactBlockedBy) ? win.compactBlockedBy : [];
           const names = kinds.map((k) => (k === 'job' ? '后台任务' : k === 'subagent' ? '子 agent' : '任务')).filter((v, i, a) => a.indexOf(v) === i).join('、');
-          body = note('已到压缩时间，但' + (names || '任务') + '还在运行，暂缓压缩。' + (keepOn ? '保活继续，直到达到最长保活时长；' : '会一直重试，') + '任务结束叫醒 agent 后，倒计时从头开始');
+          body = note('已到压缩时间，但' + (names || '任务') + '还在运行，暂缓压缩。' + (keepOn ? '保活继续，直到达到最长保活时长；' : '会重试 60 分钟，之后放弃，') + '任务结束叫醒 agent 后，倒计时从头开始');
         }
         else if (status === 'done' || status === 'manual') {
           body = h('div', { style: { display: 'flex', flexDirection: 'column', gap: 3 } },
@@ -1077,6 +1078,8 @@ window.__ModuleLoader__.load({
             lastAt ? h('div', { style: { display: 'flex', justifyContent: 'space-between', gap: 10 } },
               h('span', { style: { color: TIP.tertiary } }, '压缩时间'),
               h('span', { style: { fontWeight: 500, fontVariantNumeric: 'tabular-nums' } }, lastAt)) : null);
+        } else if (status === 'failed') {
+          body = note('空闲满时间后自动压缩了一次，但没有成功（出错、无内容可压或没有压缩命令）' + (lastAt ? '，时间 ' + lastAt : '') + '。下一条消息起重新计时');
         } else if (status === 'stopped') body = note((keepOn ? '本轮保活已停（缓存可能已过期），' : '本轮已结束（任务一直没结束或上下文太小），') + '不会自动压缩；下一条消息起重新计时');
         else if (status === 'waiting') body = note('等待下一条消息开始计时（刚开启，或插件刚重载/重启，快照在内存里）');
         else if (status === 'off') body = note('本窗口未开启自动压缩，点击开启');

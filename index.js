@@ -508,7 +508,8 @@ export function apply(ctx) {
 
   function prune() {
     if (sessions.size <= cfg.maxSessions) return;
-    const newestFirst = [...sessions.entries()].sort((a, b) => b[1].lastRealAt - a[1].lastRealAt);
+    // Entries that already finished their round (stopped) come last, so they never push out a window that is still working.
+    const newestFirst = [...sessions.entries()].sort((a, b) => (a[1].stopped === true) - (b[1].stopped === true) || b[1].lastRealAt - a[1].lastRealAt);
     for (const [sessionId] of newestFirst.slice(cfg.maxSessions)) sessions.delete(sessionId);
   }
 
@@ -969,7 +970,7 @@ export function apply(ctx) {
       noteDeferred(sessionId, entry, 'another-replay-running', Date.now());
       return;
     }
-    if (entry.stopped) return;
+    if (entry.stopped || compacting.has(sessionId)) return;
     const compactOn = compactEnabledOf(sessionId) && compactWorthy(entry);
     const compactAfterMinutes = entryParam(entry, 'compactAfterMinutes');
     const maxIdleMinutes = entryParam(entry, 'maxIdleMinutes');
@@ -1094,7 +1095,7 @@ export function apply(ctx) {
     if (ticking || sessions.size === 0) return;
     ticking = true;
     try {
-      const entries = [...sessions.entries()].sort((a, b) => b[1].lastRealAt - a[1].lastRealAt).slice(0, cfg.maxSessions);
+      const entries = [...sessions.entries()].filter(([, entry]) => !entry.stopped).sort((a, b) => b[1].lastRealAt - a[1].lastRealAt).slice(0, cfg.maxSessions);
       for (const [sessionId, entry] of entries) {
         if (!sessionEnabledOf(sessionId) && !compactEnabledOf(sessionId)) {
           sessions.delete(sessionId);
@@ -1159,7 +1160,7 @@ export function apply(ctx) {
     if (!on) status = 'off';
     else if (entry === undefined) status = 'waiting';
     else if (compacting.has(sessionId)) status = 'running';
-    else if (last !== null && entry.stopped && entry.lastRealAt <= last.at) status = last.kind === 'manual' ? 'manual' : 'done';
+    else if (last !== null && entry.stopped && entry.lastRealAt <= last.at) status = last.kind === 'manual' ? 'manual' : last.status === 'success' ? 'done' : 'failed';
     else if (entry.stopped) status = 'stopped';
     else if (!compactWorthy(entry)) status = 'small';
     else if (entry.compactBlocked !== undefined && Date.now() - entry.lastRealAt >= minutes * 60_000) status = 'blocked';
@@ -1167,7 +1168,7 @@ export function apply(ctx) {
       status = 'counting';
       dueSeconds = Math.max(0, Math.round((entry.lastRealAt + minutes * 60_000 - Date.now()) / 1000));
     }
-    return { compactStatus: status, compactDueSeconds: dueSeconds, compactAfterMinutes: minutes, compactBlockedBy: status === 'blocked' ? entry.compactBlocked.kinds : null, compactMinTokens: entryParam(entry, 'compactMinTokens'), contextTokens: typeof entry?.contextTokens === 'number' ? entry.contextTokens : null, lastCompaction: last };
+    return { keepAlive: sessionEnabledOf(sessionId) && (entry?.snapshot === undefined || routeAllowed(entry.snapshot.provider, entry.snapshot.model)), compactStatus: status, compactDueSeconds: dueSeconds, compactAfterMinutes: minutes, compactBlockedBy: status === 'blocked' ? entry.compactBlocked.kinds : null, compactMinTokens: entryParam(entry, 'compactMinTokens'), contextTokens: typeof entry?.contextTokens === 'number' ? entry.contextTokens : null, lastCompaction: last };
   }
 
   /** Interval and keep-alive count that actually apply to this window's route (they differ per route). */

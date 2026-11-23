@@ -1885,14 +1885,14 @@ describe('v3 压缩倒计时状态（windows.compactStatus）', () => {
     assert.equal(st.windows[SID].compactStatus, 'counting');
   });
 
-  test('v3f auto 失败 → lastCompaction status error，状态 done', async () => {
+  test('v3f auto 失败 → lastCompaction status error，状态 failed', async () => {
     const comp = { calls: 0, compactNow: async () => { comp.calls += 1; throw new Error('boom'); } };
     h = await setup({ config: { compactEnabled: true, compactAfterMinutes: 10 }, agents: { [SID]: agent('idle', comp) }, compaction: comp });
     await h.real(HIT);
     await h.advance(10 * MIN + 30_000);
     const st = await h.state();
     assert.equal(st.windows[SID].lastCompaction.status, 'error');
-    assert.equal(st.windows[SID].compactStatus, 'done');
+    assert.equal(st.windows[SID].compactStatus, 'failed');
   });
 
   test('v3g manual：手动压缩后状态 manual；下一次真实请求后回到 counting', async () => {
@@ -2329,5 +2329,29 @@ describe('z 仅压缩（保活关、压缩开）', () => {
     assert.equal((await h.state()).windows[SID].compactStatus, 'counting');
     await h.advance(11 * MIN);
     assert.equal(comp.calls, 2);
+  });
+
+  test('z8 已停止的仅压缩窗口不占 maxSessions 名额：保活窗口不会被挤掉', async () => {
+    const comp = mkComp();
+    h = await setup({ config: { maxSessions: 2, sessionEnabled: { [SID]: true, [S2]: false, s3: false }, sessionCompact: { [S2]: true, s3: true }, compactAfterMinutes: 10 }, agents: { [S2]: agent('idle', comp), s3: agent('idle', comp) }, compaction: comp });
+    await h.real(HIT);
+    await h.advance(MIN);
+    await h.real(HIT, { sessionId: S2 });
+    await h.advance(11 * MIN);
+    assert.equal(comp.calls, 1);
+    await h.real(HIT, { sessionId: 's3' });
+    const ids = (await h.state()).sessions.map((x) => x.id);
+    assert.ok(ids.includes(SID), '保活窗口还在：' + ids.join());
+    assert.ok(ids.includes('s3'));
+  });
+
+  test('z9 压缩没成功（noop / 出错）不显示「已压缩」而是 failed', async () => {
+    const comp = { calls: 0, compactNow: async () => { comp.calls += 1; return null; } };
+    h = await setup({ config: only(), agents: { [SID]: agent('idle', comp) }, compaction: comp });
+    await h.real(HIT);
+    await h.advance(11 * MIN);
+    const win = (await h.state()).windows[SID];
+    assert.equal(win.compactStatus, 'failed');
+    assert.equal(win.keepAlive, false);
   });
 });
