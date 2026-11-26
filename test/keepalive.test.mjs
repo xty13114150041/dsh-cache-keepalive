@@ -1,4 +1,4 @@
-// dsh-cache-keepalive 假 ctx 测试。
+// dsh-cache-keeper 假 ctx 测试。
 // 每个用例把 index.js 复制到系统临时目录（config.json / keepalive.jsonl 也都在临时目录里），
 // 因此不会读写工作目录的 config.json / keepalive.jsonl，也不会碰 ~/.dsh。
 // 时间用 node:test 的 mock.timers 快进（只 mock setInterval 与 Date）。
@@ -22,10 +22,10 @@ const T0 = Date.parse('2026-11-18T12:00:00Z');
 const HIT = { cacheReadTokens: 5000, inputTokens: 100, outputTokens: 10 };
 const MSG = [{ role: 'user', content: 'hello' }];
 const TOOLS = [{ name: 'read' }];
-const SWITCH = '/plugins/cache-keepalive/session';
-const STATE = '/plugins/cache-keepalive/state';
-const TASK = '/plugins/cache-keepalive/task';
-const CONFIG_EP = '/plugins/cache-keepalive/config';
+const SWITCH = '/plugins/cache-keeper/session';
+const STATE = '/plugins/cache-keeper/state';
+const TASK = '/plugins/cache-keeper/task';
+const CONFIG_EP = '/plugins/cache-keeper/config';
 const REAL_ABORT_TIMEOUT = AbortSignal.timeout;
 /** A stream that never yields or returns (hung upstream). */
 const HANG = { [Symbol.asyncIterator]() { return { next: () => new Promise(() => {}), return: async () => ({ done: true, value: undefined }) }; } };
@@ -919,7 +919,7 @@ describe('j 端点防 CSRF、白名单、上限', () => {
     assert.equal(r.status, 415);
     r = await h.http(CONFIG_EP, { method: 'POST', body: { maxTouches: 3 }, headers: { 'x-keepalive': undefined } });
     assert.equal(r.status, 415);
-    r = await h.http('/plugins/cache-keepalive/task/delete', { method: 'POST', body: { session: SID }, headers: { 'content-type': undefined } });
+    r = await h.http('/plugins/cache-keeper/task/delete', { method: 'POST', body: { session: SID }, headers: { 'content-type': undefined } });
     assert.equal(r.status, 415);
     assert.equal((await h.state()).config.sessionEnabled[SID], undefined, '被拒绝的请求不得生效');
   });
@@ -931,7 +931,7 @@ describe('j 端点防 CSRF、白名单、上限', () => {
     h.replayUsage = { cacheReadTokens: 100000, inputTokens: 50, outputTokens: 16 };
     await h.advance(4 * MIN);
     assert.equal(h.logLines().filter((l) => l.kind === 'keepalive' && l.session === SID).length, 1);
-    const r = await h.http('/plugins/cache-keepalive/task/delete', { method: 'POST', body: { session: SID } });
+    const r = await h.http('/plugins/cache-keeper/task/delete', { method: 'POST', body: { session: SID } });
     assert.equal(r.status, 200);
     assert.equal(h.logLines().filter((l) => l.kind === 'keepalive' && l.session === SID).length, 0);
     assert.equal(h.logLines().filter((l) => l.kind === 'session-switch' && l.session === SID).length, 1, 'session-switch 必须保留');
@@ -1606,7 +1606,7 @@ describe('u 第二轮审查新增', () => {
 
   test('u13 HTTP：Host evil.example → 403（GET 与 POST）', async () => {
     h = await setup();
-    let r = await h.http('/plugins/cache-keepalive/state', { method: 'GET', headers: { host: 'evil.example' } });
+    let r = await h.http('/plugins/cache-keeper/state', { method: 'GET', headers: { host: 'evil.example' } });
     assert.equal(r.status, 403);
     r = await h.http(SWITCH, { method: 'POST', body: { session: SID, enabled: true }, headers: { host: 'evil.example' } });
     assert.equal(r.status, 403);
@@ -1614,33 +1614,33 @@ describe('u 第二轮审查新增', () => {
 
   test('u13b Host 等于 getOrigin → 通过', async () => {
     h = await setup();
-    const r = await h.http('/plugins/cache-keepalive/state', { method: 'GET', headers: { host: '127.0.0.1:50867' } });
+    const r = await h.http('/plugins/cache-keeper/state', { method: 'GET', headers: { host: '127.0.0.1:50867' } });
     assert.equal(r.status, 200);
   });
 
   test('u13c 允许 localhost / IPv4 / IPv6 字面量 host', async () => {
     h = await setup();
     for (const host of ['localhost:1234', '192.168.1.5:3000', '[::1]:3000', 'app.localhost:8080']) {
-      const r = await h.http('/plugins/cache-keepalive/state', { method: 'GET', headers: { host } });
+      const r = await h.http('/plugins/cache-keeper/state', { method: 'GET', headers: { host } });
       assert.equal(r.status, 200, host);
     }
   });
 
   test('u14 sec-fetch-site: cross-site → 403；same-origin/none/缺失 → 通过', async () => {
     h = await setup();
-    let r = await h.http('/plugins/cache-keepalive/state', { method: 'GET', headers: { 'sec-fetch-site': 'cross-site' } });
+    let r = await h.http('/plugins/cache-keeper/state', { method: 'GET', headers: { 'sec-fetch-site': 'cross-site' } });
     assert.equal(r.status, 403);
     for (const v of ['same-origin', 'none', undefined]) {
-      r = await h.http('/plugins/cache-keepalive/state', { method: 'GET', headers: { 'sec-fetch-site': v } });
+      r = await h.http('/plugins/cache-keeper/state', { method: 'GET', headers: { 'sec-fetch-site': v } });
       assert.equal(r.status, 200, String(v));
     }
   });
 
   test('u15 POST /clientlog：缺 x-keepalive → 415；正常 → 200', async () => {
     h = await setup();
-    let r = await h.http('/plugins/cache-keepalive/clientlog', { method: 'POST', body: { stage: 'x' }, headers: { 'x-keepalive': undefined } });
+    let r = await h.http('/plugins/cache-keeper/clientlog', { method: 'POST', body: { stage: 'x' }, headers: { 'x-keepalive': undefined } });
     assert.equal(r.status, 415);
-    r = await h.http('/plugins/cache-keepalive/clientlog', { method: 'POST', body: { stage: 'x' } });
+    r = await h.http('/plugins/cache-keeper/clientlog', { method: 'POST', body: { stage: 'x' } });
     assert.equal(r.status, 200);
   });
 

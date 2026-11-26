@@ -1,5 +1,5 @@
 /**
- * dsh-cache-keepalive — Host-only bundle.
+ * dsh-cache-keeper — Host-only bundle.
  *
  * What it does: while a user-visible main session sits idle, replay the last real
  * model request (same provider/model/messages/tools/toolHistory/config, only
@@ -201,7 +201,7 @@ const CONFIG_PATCH_KEYS = ['enabled', 'compactEnabled', 'compactResetOnManual', 
 /** Max number of per-model override entries kept. */
 const ROUTE_SETTINGS_MAX = 50;
 
-export const name = 'cache-keepalive';
+export const name = 'cache-keeper';
 export const inject = ['llm', 'sessions'];
 
 export function apply(ctx) {
@@ -724,7 +724,7 @@ export function apply(ctx) {
       recomputeStats();
       return true;
     } catch (error) {
-      ctx.logger?.warn?.('cache-keepalive: delete record failed: ' + String(error?.message ?? error));
+      ctx.logger?.warn?.('cache-keeper: delete record failed: ' + String(error?.message ?? error));
       return false;
     }
   }
@@ -1104,7 +1104,7 @@ export function apply(ctx) {
         try {
           await replay(sessionId, entry);
         } catch (error) {
-          ctx.logger?.warn?.('cache-keepalive: replay failed: ' + String(error?.message ?? error));
+          ctx.logger?.warn?.('cache-keeper: replay failed: ' + String(error?.message ?? error));
         }
       }
     } finally {
@@ -1117,7 +1117,7 @@ export function apply(ctx) {
     try {
       capture(options);
     } catch (error) {
-      ctx.logger?.warn?.('cache-keepalive: capture failed: ' + String(error?.message ?? error));
+      ctx.logger?.warn?.('cache-keeper: capture failed: ' + String(error?.message ?? error));
     }
     const sessionId = options?.sessionId;
     if (typeof sessionId !== 'string' || sessionId.length === 0) return raw;
@@ -1146,7 +1146,7 @@ export function apply(ctx) {
       entry.snapshot = undefined;
       appendLog({ kind: 'compact', session: sessionId, title: entry.title ?? null, status: 'manual', via: 'user', text: 'manual compaction: countdown cleared, waiting for the next real request' });
     } catch (error) {
-      ctx.logger?.warn?.('cache-keepalive: compaction event handler failed: ' + String(error?.message ?? error));
+      ctx.logger?.warn?.('cache-keeper: compaction event handler failed: ' + String(error?.message ?? error));
     }
   });
 
@@ -1385,7 +1385,7 @@ export function apply(ctx) {
       webCtx.effect(function* statusRoutes() {
         const offState = webServer.register({
         kind: 'exact',
-        path: '/plugins/cache-keepalive/state',
+        path: '/plugins/cache-keeper/state',
         handler: (req, res) => {
           if (req.method !== 'GET' && req.method !== 'HEAD') {
             send(res, 405, { error: 'method not allowed' });
@@ -1396,7 +1396,7 @@ export function apply(ctx) {
       });
       const offConfig = webServer.register({
         kind: 'exact',
-        path: '/plugins/cache-keepalive/config',
+        path: '/plugins/cache-keeper/config',
         handler: async (req, res) => {
           if (req.method !== 'POST') {
             send(res, 405, { error: 'method not allowed' });
@@ -1432,7 +1432,7 @@ export function apply(ctx) {
       });
       const offSession = webServer.register({
         kind: 'exact',
-        path: '/plugins/cache-keepalive/session',
+        path: '/plugins/cache-keeper/session',
         handler: async (req, res) => {
           if (req.method !== 'POST') {
             send(res, 405, { error: 'method not allowed' });
@@ -1467,7 +1467,7 @@ export function apply(ctx) {
       });
       const offDiagLog = webServer.register({
         kind: 'exact',
-        path: '/plugins/cache-keepalive/clientlog',
+        path: '/plugins/cache-keeper/clientlog',
         handler: async (req, res) => {
           if (req.method !== 'POST') {
             send(res, 405, { error: 'method not allowed' });
@@ -1487,7 +1487,7 @@ export function apply(ctx) {
       });
       const offTask = webServer.register({
         kind: 'exact',
-        path: '/plugins/cache-keepalive/task',
+        path: '/plugins/cache-keeper/task',
         handler: (req, res) => {
           if (req.method !== 'GET' && req.method !== 'HEAD') {
             send(res, 405, { error: 'method not allowed' });
@@ -1513,7 +1513,7 @@ export function apply(ctx) {
       });
       const offTaskDelete = webServer.register({
         kind: 'exact',
-        path: '/plugins/cache-keepalive/task/delete',
+        path: '/plugins/cache-keeper/task/delete',
         handler: async (req, res) => {
           if (req.method !== 'POST') {
             send(res, 405, { error: 'method not allowed' });
@@ -1538,7 +1538,7 @@ export function apply(ctx) {
       });
       const offDebug = webServer.register({
         kind: 'exact',
-        path: '/plugins/cache-keepalive/debug',
+        path: '/plugins/cache-keeper/debug',
         handler: (req, res) => {
           if (req.method !== 'GET' && req.method !== 'HEAD') {
             send(res, 405, { error: 'method not allowed' });
@@ -1559,13 +1559,13 @@ export function apply(ctx) {
           }
           let clientPath = null;
           try {
-            clientPath = clientModules?.clientPath?.('dsh-cache-keepalive') ?? null;
+            clientPath = clientModules?.clientPath?.('dsh-cache-keeper') ?? null;
           } catch {
             clientPath = null;
           }
           let loaderEntries = null;
           try {
-            loaderEntries = [...ctx.loader.entries()].map((entry) => entry.options?.name).filter((name) => typeof name === 'string' && name.includes('cache-keepalive'));
+            loaderEntries = [...ctx.loader.entries()].map((entry) => entry.options?.name).filter((name) => typeof name === 'string' && name.includes('cache-keeper'));
           } catch {
             loaderEntries = null;
           }
@@ -1593,7 +1593,7 @@ export function apply(ctx) {
     try {
       ctx.inject(['webServer'], installRoutes);
     } catch (error) {
-      ctx.logger?.warn?.('cache-keepalive: cannot register status routes: ' + String((error && error.message) || error));
+      ctx.logger?.warn?.('cache-keeper: cannot register status routes: ' + String((error && error.message) || error));
     }
   }
   registerStatusRoutes();
@@ -1611,7 +1611,7 @@ export function apply(ctx) {
     const startTimer = () => {
       const t = setInterval(() => {
         tick().catch((error) => {
-          ctx.logger?.warn?.('cache-keepalive: tick failed: ' + String(error?.message ?? error));
+          ctx.logger?.warn?.('cache-keeper: tick failed: ' + String(error?.message ?? error));
         });
       }, timerSeconds * 1000);
       t.unref?.();

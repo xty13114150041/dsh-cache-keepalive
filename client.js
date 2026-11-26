@@ -1,14 +1,14 @@
-// dsh-cache-keepalive — Client module: the settings-page status card.
+// dsh-cache-keeper — Client module: the settings-page status card.
 // Registers into `plugins.row.config` keyed by "<bundle>#<rowId>", which is what
 // makes the Plugin Manager show a "Configure" page for this plugin row.
-// Every step reports to the Host's /plugins/cache-keepalive/clientlog so a load
+// Every step reports to the Host's /plugins/cache-keeper/clientlog so a load
 // or registration failure is visible without browser devtools.
 window.__ModuleLoader__.load({
-  id: 'dsh-cache-keepalive',
+  id: 'dsh-cache-keeper',
   factory(require) {
     const report = (stage, detail) => {
       try {
-        fetch('/plugins/cache-keepalive/clientlog', {
+        fetch('/plugins/cache-keeper/clientlog', {
           method: 'POST',
           headers: { 'content-type': 'application/json', 'x-keepalive': '1' },
           body: JSON.stringify({ stage, detail: detail === undefined ? '' : String(detail) }),
@@ -23,12 +23,12 @@ window.__ModuleLoader__.load({
 
       const React = require('react');
       const h = React.createElement;
-      const API = '/plugins/cache-keepalive';
+      const API = '/plugins/cache-keeper';
 
       // ---- Look & feel -----------------------------------------------------
       // One <style> tag (ref-counted on the element itself, removed when the last
       // page unmounts). Every colour comes from a DSH token with a fallback.
-      const STYLE_ID = 'dsh-cache-keepalive-style';
+      const STYLE_ID = 'dsh-cache-keeper-style';
       const CSS = `
 .ka{--ka-fg:var(--dsw-alias-label-primary,#101828);--ka-fg2:var(--dsw-alias-label-secondary,#4a5565);--ka-fg3:var(--dsw-alias-label-tertiary,#667085);--ka-base:var(--dsw-alias-bg-base,#ffffff);--ka-l1:var(--dsw-alias-bg-layer-1,#f7f8fa);--ka-l2:var(--dsw-alias-bg-layer-2,#eef0f3);--ka-b1:var(--dsw-alias-border-l1,rgba(16,24,40,.09));--ka-b2:var(--dsw-alias-border-l2,rgba(16,24,40,.18));--ka-brand:var(--dsw-alias-brand-primary,#3b6cf6);--ka-on-brand:var(--dsw-alias-brand-on-primary,#ffffff);--ka-ok:var(--dsw-alias-state-success-primary,#1f9d57);--ka-warn:var(--dsw-alias-state-warn-primary,#c98a04);--ka-err:var(--dsw-alias-state-error-primary,#d92d20);--ka-idle:var(--dsw-alias-state-idle-primary,#98a2b3);--ka-rm:var(--dsw-radius-md,8px);--ka-rl:var(--dsw-radius-lg,12px);display:flex;flex-direction:column;gap:22px;min-width:0;font-family:var(--dsw-font-family,inherit);font-size:13px;line-height:1.5;color:var(--ka-fg)}
 .ka *,.ka *::before,.ka *::after{box-sizing:border-box}
@@ -614,7 +614,7 @@ window.__ModuleLoader__.load({
                 ? h('span', { className: 'ka-bar-s' }, '有 ' + dirtyCount + ' 项未保存的更改')
                 : h('span', { className: 'ka-bar-s' }, '数值修改后点击保存生效；开关同样需要保存');
 
-        return h('div', { className: 'ka', 'data-plugin': 'cache-keepalive' },
+        return h('div', { className: 'ka', 'data-plugin': 'cache-keeper' },
           error ? h('div', { className: 'ka-banner', role: 'alert' },
             h('span', null, '状态接口不可用：' + error + (loaded ? '（当前显示上一次的数据）' : '')),
             h('button', { type: 'button', className: 'ka-btn ka-btn--sm', onClick: () => void refresh() }, '重试')
@@ -710,7 +710,11 @@ window.__ModuleLoader__.load({
             h('div', { className: 'ka-card' },
               h(TaskRecords, { tasks, onChanged: refresh })
             )
-          )
+          ),
+
+          h('p', { className: 'ka-foot', style: { marginTop: 14 } }, 'dsh-cache-keeper 继承自 ',
+            h('a', { href: 'https://github.com/hongcha-dsh/dsh-cache-keepalive', target: '_blank', rel: 'noreferrer', style: { color: 'inherit', textDecoration: 'underline' } }, 'hongcha-dsh/dsh-cache-keepalive'),
+            '（MIT 协议），在其基础上增加了 Claude 安全重放、空闲后自动压缩、按模型设置和新设置页。')
         );
       }
 
@@ -992,7 +996,7 @@ window.__ModuleLoader__.load({
 
         return ReactDOM.createPortal(
           h('div', {
-            'data-plugin': 'cache-keepalive-tip',
+            'data-plugin': 'cache-keeper-tip',
             role: 'tooltip',
             style: frame,
             onMouseEnter: onEnter,
@@ -1087,7 +1091,7 @@ window.__ModuleLoader__.load({
         const stateText = status === 'loading' ? '读取中' : status === 'off' ? '本窗口关' : '本窗口开';
         return ReactDOM.createPortal(
           h('div', {
-            'data-plugin': 'cache-keepalive-compact-tip',
+            'data-plugin': 'cache-keeper-compact-tip',
             role: 'tooltip',
             style: frame,
             onMouseEnter: onEnter,
@@ -1249,7 +1253,7 @@ window.__ModuleLoader__.load({
         const pill = h('button', {
           ref: buttonRef,
           type: 'button',
-          'data-plugin': 'cache-keepalive-toggle',
+          'data-plugin': 'cache-keeper-toggle',
           // The native tooltip is only the fallback: with react-dom available the
           // hover card below replaces it (it shows live numbers, not just a hint).
           title: canFloat && !missing
@@ -1292,7 +1296,7 @@ window.__ModuleLoader__.load({
         const compactDim = missing;
         const compactPill = missing ? null : h('button', {
           type: 'button',
-          'data-plugin': 'cache-keepalive-compact-toggle',
+          'data-plugin': 'cache-keeper-compact-toggle',
           ref: compactRef,
           title: canFloat
             ? undefined
@@ -1330,7 +1334,7 @@ window.__ModuleLoader__.load({
 
         // One oval holding both switches, split by a thin vertical rule.
         const oval = (...parts) => h('span', {
-          'data-plugin': 'cache-keepalive-oval',
+          'data-plugin': 'cache-keeper-oval',
           style: {
             display: 'inline-flex',
             alignItems: 'stretch',
@@ -1385,7 +1389,7 @@ window.__ModuleLoader__.load({
 
       // Page body of the Cmd+, Settings section: the same card as the Plugins page, in page view.
       function KeepaliveSettingsSection() {
-        return h('div', { style: { padding: '4px 4px 28px', maxWidth: 820, fontFamily: 'var(--dsw-font-family, inherit)' }, 'data-plugin': 'cache-keepalive-section' },
+        return h('div', { style: { padding: '4px 4px 28px', maxWidth: 820, fontFamily: 'var(--dsw-font-family, inherit)' }, 'data-plugin': 'cache-keeper-section' },
           h('h2', { style: { margin: '0 0 4px', fontSize: 18, fontWeight: 600, letterSpacing: '-0.01em', color: 'var(--dsw-alias-label-primary, #101828)' } }, '缓存保活'),
           h('p', { style: { margin: '0 0 18px', fontSize: 12, lineHeight: 1.6, color: 'var(--dsw-alias-label-secondary, #4a5565)' } }, '空闲时自动重放最近一次请求，保持提示词缓存有效；可选空闲后自动压缩。每个对话窗口在输入框旁单独开关。'),
           h(StatusCard, { view: 'page' }));
@@ -1401,8 +1405,8 @@ window.__ModuleLoader__.load({
                 return ctx.slots.register(
                   {
                     name: 'plugins.row.config',
-                    id: 'cache-keepalive-config',
-                    key: 'dsh-cache-keepalive#cache-keepalive',
+                    id: 'cache-keeper-config',
+                    key: 'dsh-cache-keeper#cache-keeper',
                     order: 10
                   },
                   StatusCard
@@ -1416,7 +1420,7 @@ window.__ModuleLoader__.load({
               try {
                 report('section-slot-inject');
                 return ctx.slots.register(
-                  { name: 'settings.section', id: 'cache-keepalive', order: 40, label: () => '缓存保活' },
+                  { name: 'settings.section', id: 'cache-keeper', order: 40, label: () => '缓存保活' },
                   KeepaliveSettingsSection
                 );
               } catch (error) {
@@ -1431,7 +1435,7 @@ window.__ModuleLoader__.load({
                 return ctx.slots.register(
                   {
                     name: 'plugins.item',
-                    id: 'cache-keepalive',
+                    id: 'cache-keeper',
                     order: 90,
                     label: () => '缓存保活'
                   },
@@ -1448,7 +1452,7 @@ window.__ModuleLoader__.load({
                 return ctx.slots.register(
                   {
                     name: 'conversation.composer.dock',
-                    id: 'cache-keepalive-toggle',
+                    id: 'cache-keeper-toggle',
                     order: 30,
                     // Session-scoped slot: the renderer passes this slot's binding
                     // key (the session id) as the first inject argument.

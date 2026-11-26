@@ -1,4 +1,4 @@
 - insert:
-    - id: cache-keepalive
-      name: dsh-cache-keepalive
+    - id: cache-keeper
+      name: dsh-cache-keeper
       config: {}

@@ -1,4 +1,12 @@
-# dsh-cache-keepalive
+# dsh-cache-keeper
+
+> **Inherited from [hongcha-dsh/dsh-cache-keepalive](https://github.com/hongcha-dsh/dsh-cache-keepalive)** (MIT).
+> This is a continuation of that plugin under a new name: the original keep-alive core and its settings card are
+> hongcha-dsh's work; this version adds Claude-safe replays, per-window compaction after idle (also without keep-alive),
+> per-model settings, hardened endpoints and a rebuilt settings page. The proposal was sent upstream as
+> [PR #1](https://github.com/hongcha-dsh/dsh-cache-keepalive/pull/1) and got no reply, hence this separate release.
+> It is not the same package: install `dsh-cache-keeper`, and do not run it together with `dsh-cache-keepalive`.
+> The HTTP routes moved from `/plugins/cache-keepalive/*` to `/plugins/cache-keeper/*`; `config.json` and the log keep their format.
 
 Host-only Harness bundle + a settings page. While a user-visible main session is idle, it replays
 the last real model request (same provider/model/messages/tools/toolHistory/config, only
@@ -152,7 +160,7 @@ saving. All figures are estimates, not a bill.
 - **Only arms a route it has proof for.** A route is armed only after a real request on it reported a
   genuine cache hit (`cacheRead >= 1024` and `>= 20%` of the prompt). Replays never self-certify.
 - Skips subagent/fork sessions, requests with a `purpose` (compaction, titles...) and its own replays.
-- Every `scanSeconds` (default 15), due sessions (the most recent `maxSessions`, default 3) are replayed
+- Every `scanSeconds` (default 15), due sessions (the most recent `maxSessions` that are not stopped, default 3) are replayed
   one after another: replay once, consume the stream, drop the output. A replay has a 60 s timeout.
 - **A replay counts as a hit only if it reads ≥ 90 % of its prompt from the cache.** A miss (including a
   partial hit, or no cache fields at all while input was billed), an error, or an unknown result stops that
@@ -203,12 +211,12 @@ prompt text.
 
 | method + path | purpose |
 |---|---|
-| `GET /plugins/cache-keepalive/state` | config (with the derived `maxTouches`), counters, tracked sessions, per-task records, and `windows` (numbers since that window was switched on, with the interval/limit of its route) |
-| `POST /plugins/cache-keepalive/config` | merge a JSON patch of whitelisted fields (`enabled`, `compactEnabled`, `compactSkipWhenBusy`, `compactMinTokens`, `compactResetOnManual`, `compactAfterMinutes`, `intervalMinutes`, `maxIdleMinutes`, `replayMaxTokens`, `scanSeconds`, `maxSessions`); values are clamped. `routeSettings` is also accepted: `{ "provider/model": {fields} \| null }`, an object replaces that model's overrides, `null` removes them |
-| `POST /plugins/cache-keepalive/session` | `{"session":"<id>","enabled"?:bool,"compact"?:bool}`: one window's switches |
-| `GET /plugins/cache-keepalive/task?session=<id>` | one task record plus its per-touch detail |
-| `POST /plugins/cache-keepalive/task/delete` | `{"session":"<id>"}`: forget that task record |
-| `POST /plugins/cache-keepalive/clientlog`, `GET .../debug` | browser-module load diagnostics |
+| `GET /plugins/cache-keeper/state` | config (with the derived `maxTouches`), counters, tracked sessions, per-task records, and `windows` (numbers since that window was switched on, with the interval/limit of its route) |
+| `POST /plugins/cache-keeper/config` | merge a JSON patch of whitelisted fields (`enabled`, `compactEnabled`, `compactSkipWhenBusy`, `compactMinTokens`, `compactResetOnManual`, `compactAfterMinutes`, `intervalMinutes`, `maxIdleMinutes`, `replayMaxTokens`, `scanSeconds`, `maxSessions`); values are clamped. `routeSettings` is also accepted: `{ "provider/model": {fields} \| null }`, an object replaces that model's overrides, `null` removes them |
+| `POST /plugins/cache-keeper/session` | `{"session":"<id>","enabled"?:bool,"compact"?:bool}`: one window's switches |
+| `GET /plugins/cache-keeper/task?session=<id>` | one task record plus its per-touch detail |
+| `POST /plugins/cache-keeper/task/delete` | `{"session":"<id>"}`: forget that task record |
+| `POST /plugins/cache-keeper/clientlog`, `GET .../debug` | browser-module load diagnostics |
 
 ## Files
 

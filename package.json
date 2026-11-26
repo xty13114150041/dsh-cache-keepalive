@@ -1,13 +1,13 @@
 {
-  "name": "dsh-cache-keepalive",
+  "name": "dsh-cache-keeper",
   "version": "0.7.0",
   "private": false,
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/hongcha-dsh/dsh-cache-keepalive.git"
+    "url": "git+https://github.com/xty13114150041/dsh-cache-keeper.git"
   },
   "type": "module",
-  "description": "主会话空闲时自动重放最近一次请求，保持提示词缓存有效。",
+  "description": "主会话空闲时自动重放最近一次请求保持提示词缓存有效，可选空闲后自动压缩（继承自 hongcha-dsh/dsh-cache-keepalive）。",
   "exports": {
     ".": "./index.js",
     "./client": "./client.js",
@@ -37,5 +37,6 @@
   },
   "scripts": {
     "test": "node --test test/keepalive.test.mjs"
-  }
+  },
+  "homepage": "https://github.com/xty13114150041/dsh-cache-keeper"
 }
